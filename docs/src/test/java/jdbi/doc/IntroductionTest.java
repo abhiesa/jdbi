@@ -14,16 +14,13 @@
 package jdbi.doc;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.tuple;
 
 import java.util.List;
 
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.sqlobject.SqlObjectPlugin;
-import org.jdbi.v3.sqlobject.config.RegisterBeanMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
 import org.jdbi.v3.sqlobject.customizer.BindBean;
-import org.jdbi.v3.sqlobject.statement.SqlBatch;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 import org.junit.Test;
@@ -35,7 +32,7 @@ public class IntroductionTest {
         // tag::core[]
         Jdbi jdbi = Jdbi.create("jdbc:h2:mem:test"); // (H2 in-memory database)
 
-        List<User> users = jdbi.withHandle(handle -> {
+        List<String> userNames = jdbi.withHandle(handle -> {
             handle.execute("CREATE TABLE user (id INTEGER PRIMARY KEY, name VARCHAR)");
 
             // Inline positional parameters
@@ -58,17 +55,14 @@ public class IntroductionTest {
                     .bindBean(new User(3, "David"))
                     .execute();
 
-            // Easy mapping to your types
-            return handle.createQuery("SELECT * FROM user ORDER BY id")
-                    .mapToBean(User.class)
+            // Easy mapping to any type
+            return handle.createQuery("SELECT name FROM user ORDER BY name")
+                    .mapTo(String.class)
                     .list();
         });
+
+        assertThat(userNames).containsExactly("Alice", "Bob", "Clarice", "David");
         // end::core[]
-        assertThat(users).extracting(User::getId, User::getName).containsExactly(
-                tuple(0, "Alice"),
-                tuple(1, "Bob"),
-                tuple(2, "Clarice"),
-                tuple(3, "David"));
     }
 
     // tag::sqlobject-declaration[]
@@ -77,15 +71,17 @@ public class IntroductionTest {
         @SqlUpdate("CREATE TABLE user (id INTEGER PRIMARY KEY, name VARCHAR)")
         void createTable();
 
+        @SqlUpdate("INSERT INTO user(id, name) VALUES (?, ?)")
+        void insertPositional(int id, String name);
+
         @SqlUpdate("INSERT INTO user(id, name) VALUES (:id, :name)")
-        void insertUser(@Bind("id") int id, @Bind("name") String name);
+        void insertNamed(@Bind("id") int id, @Bind("name") String name);
 
-        @SqlBatch("INSERT INTO user(id, name) VALUES (:id, :name)")
-        void insertUsers(@BindBean User... users);
+        @SqlUpdate("INSERT INTO user(id, name) VALUES (:id, :name)")
+        void insertBean(@BindBean User user);
 
-        @SqlQuery("SELECT * FROM user ORDER BY id")
-        @RegisterBeanMapper(User.class)
-        List<User> listUsers();
+        @SqlQuery("SELECT name FROM user ORDER BY name")
+        List<String> listUserNames();
     }
     // end::sqlobject-declaration[]
 
@@ -96,20 +92,19 @@ public class IntroductionTest {
         jdbi.installPlugin(new SqlObjectPlugin());
 
         // Jdbi implements your interface based on annotations
-        List<User> users = jdbi.withExtension(UserDao.class, dao -> {
+        List<String> userNames = jdbi.withExtension(UserDao.class, dao -> {
             dao.createTable();
 
-            dao.insertUser(0, "Alice");
-            dao.insertUsers(new User(1, "Bob"), new User(2, "Clarice"), new User(3, "David"));
+            dao.insertPositional(0, "Alice");
+            dao.insertPositional(1, "Bob");
+            dao.insertNamed(2, "Clarice");
+            dao.insertBean(new User(3, "David"));
 
-            return dao.listUsers();
+            return dao.listUserNames();
         });
+
+        assertThat(userNames).containsExactly("Alice", "Bob", "Clarice", "David");
         // end::sqlobject-usage[]
-        assertThat(users).extracting(User::getId, User::getName).containsExactly(
-                tuple(0, "Alice"),
-                tuple(1, "Bob"),
-                tuple(2, "Clarice"),
-                tuple(3, "David"));
     }
 
 
